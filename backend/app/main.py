@@ -108,11 +108,16 @@ def analyze_logs(logs_data, rules, query):
         chunk = logs[i:i + window_size]
         levels = Counter(l["level"] for l in chunk)
         sources = Counter(l["source"] for l in chunk)
+        # per-source level breakdown, used by 按来源拆分 视图
+        source_levels: dict = {}
+        for l in chunk:
+            source_levels.setdefault(l["source"], Counter())[l["level"]] += 1
         windows.append({
             "start": i, "end": min(i + window_size, n),
             "count": len(chunk),
             "levels": dict(levels),
-            "sources": dict(sources)
+            "sources": dict(sources),
+            "sourceLevels": {s: dict(c) for s, c in source_levels.items()}
         })
 
     # 3-sigma + IQR anomaly detection
@@ -143,18 +148,18 @@ def analyze_logs(logs_data, rules, query):
     alerts = []
     for i, rule in enumerate(rules):
         rule = rule if isinstance(rule, dict) else {}
-        for w in windows:
+        for wi, w in enumerate(windows):
             if rule.get("type") == "level" and w["levels"].get("ERROR", 0) > rule.get("threshold", 5):
                 alerts.append({
                     "id": len(alerts) + 1, "ruleName": rule.get("name", "高频ERROR"),
                     "severity": "high", "message": f"窗口{w['start']}内ERROR日志{w['levels']['ERROR']}条超过阈值{rule.get('threshold',5)}",
-                    "timestamp": time.strftime("%H:%M:%S")
+                    "timestamp": time.strftime("%H:%M:%S"), "windowIndex": wi
                 })
             if rule.get("type") == "count" and w["count"] > rule.get("threshold", 200):
                 alerts.append({
                     "id": len(alerts) + 1, "ruleName": rule.get("name", "异常流量"),
                     "severity": "medium", "message": f"窗口{w['start']}日志量{w['count']}超过阈值",
-                    "timestamp": time.strftime("%H:%M:%S")
+                    "timestamp": time.strftime("%H:%M:%S"), "windowIndex": wi
                 })
 
     # Full-text search with TF-IDF
@@ -175,7 +180,7 @@ def analyze_logs(logs_data, rules, query):
                 "id": len(alerts) + 1, "ruleName": "统计异常检测",
                 "severity": "critical" if a["sigmaScore"] > 4 else "high",
                 "message": f"窗口{a['windowIndex']}: 3-sigma={a['sigmaScore']}, IQR={a['iqrScore']}",
-                "timestamp": a["timestamp"]
+                "timestamp": a["timestamp"], "windowIndex": a["windowIndex"]
             })
 
     return {

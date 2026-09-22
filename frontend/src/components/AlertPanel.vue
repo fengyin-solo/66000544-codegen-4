@@ -1,7 +1,8 @@
 <template>
   <div class="panel">
     <h4>🚨 告警列表</h4>
-    <div v-if="!alerts.length" class="empty">暂无告警</div>
+    <CaliberBar />
+    <div v-if="!alerts.length" class="empty">当前口径（{{ store.caliberText }}）下暂无告警</div>
     <div v-for="a in alerts.slice(0,8)" :key="a.id" class="alert-row" :class="a.severity">
       <span class="a-sev" :class="a.severity">{{ a.severity.toUpperCase() }}</span>
       <span class="a-msg">{{ a.message }}</span>
@@ -12,8 +13,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useLogStore } from '../store/log'
+import CaliberBar from './CaliberBar.vue'
 const store = useLogStore()
-const alerts = computed(() => store.result?.alerts || [])
+const alerts = computed(() => store.scopedAlerts)
 </script>
 
 <style scoped>
