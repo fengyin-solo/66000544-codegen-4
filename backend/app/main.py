@@ -97,6 +97,19 @@ def detect_anomalies(req: DetectRequest):
     return analyze_logs(req.logs, req.rules, req.query)
 
 
+LEVEL_ALIASES = {
+    "info": "INFO", "notice": "INFO",
+    "warn": "WARN", "warning": "WARN",
+    "error": "ERROR", "err": "ERROR",
+    "debug": "DEBUG", "trace": "DEBUG",
+}
+CANON_LEVELS = ["INFO", "WARN", "ERROR", "DEBUG"]
+
+
+def canon_level(level):
+    return LEVEL_ALIASES.get(str(level).strip().lower(), str(level).strip().upper())
+
+
 def analyze_logs(logs_data, rules, query):
     logs = logs_data
     n = len(logs)
@@ -106,13 +119,18 @@ def analyze_logs(logs_data, rules, query):
     windows = []
     for i in range(0, n, window_size):
         chunk = logs[i:i + window_size]
-        levels = Counter(l["level"] for l in chunk)
+        levels = Counter(canon_level(l["level"]) for l in chunk)
         sources = Counter(l["source"] for l in chunk)
+        # level -> source -> count, so the heatmap can split by source
+        level_sources = {lv: Counter() for lv in CANON_LEVELS}
+        for l in chunk:
+            level_sources[canon_level(l["level"])][l["source"]] += 1
         windows.append({
             "start": i, "end": min(i + window_size, n),
             "count": len(chunk),
-            "levels": dict(levels),
-            "sources": dict(sources)
+            "levels": {lv: levels.get(lv, 0) for lv in CANON_LEVELS},
+            "sources": dict(sources),
+            "levelSources": {lv: dict(c) for lv, c in level_sources.items()},
         })
 
     # 3-sigma + IQR anomaly detection
